@@ -543,10 +543,32 @@ TEST_CASE("Packets", "[encoding.packets]")
         gold.BaseId.BaseId = 0xF;
         gold.Count = 250;
 
+        Inventory::EffectItem restoreHealth;
+        restoreHealth.Magnitude = 25.f;
+        restoreHealth.Duration = 0;
+        restoreHealth.RawCost = 12.5f;
+        restoreHealth.EffectId.BaseId = 0x3EB15;
+
+        Inventory::Entry createdPotion;
+        createdPotion.BaseId.ModId = 0xFFFFFFFF;
+        createdPotion.BaseId.BaseId = 0x801;
+        createdPotion.Count = 2;
+        createdPotion.AlchemyEffects = {restoreHealth};
+
+        // The same potion has another temporary id on another client
+        Inventory::Entry sameCreatedPotion = createdPotion;
+        sameCreatedPotion.BaseId.BaseId = 0x93A;
+        REQUIRE(createdPotion.CanBeMerged(sameCreatedPotion));
+
+        Inventory::Entry createdPoison = createdPotion;
+        createdPoison.IsPoison = true;
+        REQUIRE(!createdPotion.CanBeMerged(createdPoison));
+        REQUIRE(!createdPotion.CanBeMerged(gold));
+
         RequestInventorySnapshot sendMessage;
         sendMessage.ServerId = 0x10042;
         sendMessage.OwnershipEpoch = 7;
-        sendMessage.CurrentInventory.Entries = {armor, gold};
+        sendMessage.CurrentInventory.Entries = {armor, gold, createdPotion, createdPoison};
         sendMessage.CurrentInventory.CurrentMagicEquipment.RightHandSpell.BaseId = 0x12FCD;
 
         Buffer buff(1000);

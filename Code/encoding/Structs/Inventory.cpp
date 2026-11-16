@@ -48,6 +48,13 @@ void Inventory::Entry::Serialize(TiltedPhoques::Buffer::Writer& aWriter) const n
     Serialization::WriteBool(aWriter, ExtraWorn);
     Serialization::WriteBool(aWriter, ExtraWornLeft);
     Serialization::WriteBool(aWriter, IsQuestItem);
+
+    Serialization::WriteVarInt(aWriter, AlchemyEffects.size());
+    for (const EffectItem& effect : AlchemyEffects)
+    {
+        effect.Serialize(aWriter);
+    }
+    Serialization::WriteBool(aWriter, IsPoison);
 }
 
 void Inventory::Entry::Deserialize(TiltedPhoques::Buffer::Reader& aReader) noexcept
@@ -79,6 +86,15 @@ void Inventory::Entry::Deserialize(TiltedPhoques::Buffer::Reader& aReader) noexc
     ExtraWorn = Serialization::ReadBool(aReader);
     ExtraWornLeft = Serialization::ReadBool(aReader);
     IsQuestItem = Serialization::ReadBool(aReader);
+
+    uint64_t alchemyEffectCount = Serialization::ReadVarInt(aReader);
+    for (uint64_t i = 0; i < alchemyEffectCount; i++)
+    {
+        EffectItem effect;
+        effect.Deserialize(aReader);
+        AlchemyEffects.push_back(effect);
+    }
+    IsPoison = Serialization::ReadBool(aReader);
 }
 
 bool Inventory::operator==(const Inventory& acRhs) const noexcept
@@ -93,7 +109,7 @@ bool Inventory::operator!=(const Inventory& acRhs) const noexcept
 
 bool Inventory::Entry::operator==(const Inventory::Entry& acRhs) const noexcept
 {
-    return BaseId == acRhs.BaseId && Count == acRhs.Count && IsExtraDataEquals(acRhs);
+    return IsBaseEquals(acRhs) && Count == acRhs.Count && IsExtraDataEquals(acRhs);
 }
 
 bool Inventory::Entry::operator!=(const Inventory::Entry& acRhs) const noexcept

@@ -16,6 +16,13 @@ struct Inventory
         float RawCost{};
         GameId EffectId{};
 
+        // The raw cost is derived data and can be recomputed by the receiving game, so it doesn't identify an effect
+        bool operator==(const EffectItem& acRhs) const noexcept
+        {
+            return Magnitude == acRhs.Magnitude && Area == acRhs.Area && Duration == acRhs.Duration && EffectId == acRhs.EffectId;
+        }
+        bool operator!=(const EffectItem& acRhs) const noexcept { return !this->operator==(acRhs); }
+
         void Serialize(TiltedPhoques::Buffer::Writer& aWriter) const noexcept;
         void Deserialize(TiltedPhoques::Buffer::Reader& aReader) noexcept;
     };
@@ -49,6 +56,11 @@ struct Inventory
         bool ExtraWornLeft{};
         bool IsQuestItem{};
 
+        // Only set for player-made potions and poisons. These are temporary forms that don't exist
+        // on other clients, so the receiver recreates them from their effects.
+        Vector<EffectItem> AlchemyEffects{};
+        bool IsPoison{};
+
         bool operator==(const Entry& acRhs) const noexcept;
         bool operator!=(const Entry& acRhs) const noexcept;
 
@@ -57,7 +69,18 @@ struct Inventory
 
         bool ContainsExtraData() const noexcept { return !IsExtraDataEquals(Entry{}); }
 
-        bool CanBeMerged(const Entry& acRhs) const noexcept { return BaseId == acRhs.BaseId && IsExtraDataEquals(acRhs); }
+        bool IsCreatedAlchemyItem() const noexcept { return !AlchemyEffects.empty(); }
+
+        bool IsBaseEquals(const Entry& acRhs) const noexcept
+        {
+            // A created potion has a different temporary id on every client, its effects are its identity
+            if (IsCreatedAlchemyItem() || acRhs.IsCreatedAlchemyItem())
+                return IsPoison == acRhs.IsPoison && AlchemyEffects == acRhs.AlchemyEffects;
+
+            return BaseId == acRhs.BaseId;
+        }
+
+        bool CanBeMerged(const Entry& acRhs) const noexcept { return IsBaseEquals(acRhs) && IsExtraDataEquals(acRhs); }
 
         bool IsExtraDataEquals(const Entry& acRhs) const noexcept
         {

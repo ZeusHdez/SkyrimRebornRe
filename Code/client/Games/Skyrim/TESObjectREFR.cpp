@@ -582,6 +582,48 @@ void TESObjectREFR::GetItemFromExtraData(Inventory::Entry& arEntry, ExtraDataLis
     arEntry.IsQuestItem = apExtraDataList->HasQuestObjectAlias();
 }
 
+void TESObjectREFR::GetCreatedAlchemyDataFromItem(Inventory::Entry& arEntry, TESForm* apItem) noexcept
+{
+    if (!apItem || !apItem->IsTemporary() || apItem->formType != FormType::Alchemy)
+        return;
+
+    auto& modSystem = World::Get().GetModSystem();
+
+    AlchemyItem* pAlchemyItem = static_cast<AlchemyItem*>(apItem);
+
+    arEntry.AlchemyEffects.clear();
+    for (EffectItem* pEffectItem : pAlchemyItem->listOfEffects)
+    {
+        if (!pEffectItem || !pEffectItem->pEffectSetting)
+            continue;
+
+        Inventory::EffectItem effect;
+        effect.Magnitude = pEffectItem->data.fMagnitude;
+        effect.Area = pEffectItem->data.iArea;
+        effect.Duration = pEffectItem->data.iDuration;
+        effect.RawCost = pEffectItem->fRawCost;
+        modSystem.GetServerModId(pEffectItem->pEffectSetting->formID, effect.EffectId);
+        arEntry.AlchemyEffects.push_back(effect);
+    }
+
+    arEntry.IsPoison = pAlchemyItem->IsPoison();
+}
+
+TESBoundObject* TESObjectREFR::GetObjectFromItem(const Inventory::Entry& arEntry) noexcept
+{
+    if (arEntry.IsCreatedAlchemyItem())
+    {
+        AlchemyItem* pAlchemyItem = AlchemyItem::Create(arEntry.AlchemyEffects);
+        if (pAlchemyItem && pAlchemyItem->IsPoison() != arEntry.IsPoison)
+            spdlog::warn("Created alchemy item {:X} is poison: {}, but the sender has poison: {}", pAlchemyItem->formID, pAlchemyItem->IsPoison(), arEntry.IsPoison);
+
+        return pAlchemyItem;
+    }
+
+    const uint32_t cObjectId = World::Get().GetModSystem().GetGameId(arEntry.BaseId);
+    return Cast<TESBoundObject>(TESForm::GetById(cObjectId));
+}
+
 ExtraDataList* TESObjectREFR::GetExtraDataFromItem(const Inventory::Entry& arEntry) noexcept
 {
     auto& modSystem = World::Get().GetModSystem();
@@ -720,6 +762,7 @@ Inventory TESObjectREFR::GetInventory(std::function<bool(TESForm&)> aFilter) con
         Inventory::Entry entry{};
         modSystem.GetServerModId(pGameEntry->form->formID, entry.BaseId);
         entry.Count = pGameEntry->count;
+        GetCreatedAlchemyDataFromItem(entry, pGameEntry->form);
 
         for (ExtraDataList* pExtraDataList : *pGameEntry->dataList)
         {
@@ -729,6 +772,8 @@ Inventory TESObjectREFR::GetInventory(std::function<bool(TESForm&)> aFilter) con
             Inventory::Entry innerEntry;
             innerEntry.BaseId = entry.BaseId;
             innerEntry.Count = 1;
+            innerEntry.AlchemyEffects = entry.AlchemyEffects;
+            innerEntry.IsPoison = entry.IsPoison;
 
             GetItemFromExtraData(innerEntry, pExtraDataList);
 
@@ -872,10 +917,7 @@ void TESObjectREFR::SetInventoryRetainingQuestItems(Inventory& aCurrentInventory
 
 void TESObjectREFR::AddOrRemoveItem(const Inventory::Entry& arEntry, bool aIsSettingInventory) noexcept
 {
-    ModSystem& modSystem = World::Get().GetModSystem();
-
-    uint32_t objectId = modSystem.GetGameId(arEntry.BaseId);
-    TESBoundObject* pObject = Cast<TESBoundObject>(TESForm::GetById(objectId));
+    TESBoundObject* pObject = GetObjectFromItem(arEntry);
     if (!pObject)
     {
         spdlog::warn("{}: Object to add not found, {:X}:{:X}.", __FUNCTION__, arEntry.BaseId.ModId, arEntry.BaseId.BaseId);
@@ -915,7 +957,7 @@ void TESObjectREFR::AddOrRemoveItem(const Inventory::Entry& arEntry, bool aIsSet
     {
         PlayerCharacter* pPlayer = PlayerCharacter::Get();
 
-        if (!pPlayer->IsItemInInventory(objectId))
+        if (!pPlayer->IsItemInInventory(pObject->formID))
         {
             Actor* pActor = Cast<Actor>(this);
             if (pActor && pActor->GetExtension()->IsRemotePlayer())
@@ -1046,6 +1088,7 @@ void TP_MAKE_THISCALL(HookAddInventoryItem, TESObjectREFR, TESBoundObject* apIte
         Inventory::Entry item{};
         modSystem.GetServerModId(apItem->formID, item.BaseId);
         item.Count = aCount;
+        TESObjectREFR::GetCreatedAlchemyDataFromItem(item, apItem);
 
         if (apExtraData)
             apThis->GetItemFromExtraData(item, apExtraData);
@@ -1067,6 +1110,7 @@ TP_MAKE_THISCALL(HookRemoveInventoryItem, TESObjectREFR, BSPointerHandle<TESObje
 
         Inventory::Entry item{};
         modSystem.GetServerModId(apItem->formID, item.BaseId);
+        TESObjectREFR::GetCreatedAlchemyDataFromItem(item, apItem);
 
         if (apExtraList)
         {

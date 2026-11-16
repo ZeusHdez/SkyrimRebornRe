@@ -1123,10 +1123,7 @@ void Actor::DropOrPickUpObject(const Inventory::Entry& arEntry, NiPoint3* apLoca
 {
     ExtraDataList* pExtraData = GetExtraDataFromItem(arEntry);
 
-    ModSystem& modSystem = World::Get().GetModSystem();
-
-    uint32_t objectId = modSystem.GetGameId(arEntry.BaseId);
-    TESBoundObject* pObject = Cast<TESBoundObject>(TESForm::GetById(objectId));
+    TESBoundObject* pObject = GetObjectFromItem(arEntry);
     if (!pObject)
     {
         spdlog::warn("Object to drop not found, {:X}:{:X}.", arEntry.BaseId.ModId, arEntry.BaseId.BaseId);

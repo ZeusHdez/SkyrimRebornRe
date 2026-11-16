@@ -64,6 +64,10 @@ struct TESObjectREFR : TESForm
 
     static void GetItemFromExtraData(Inventory::Entry& arEntry, ExtraDataList* apExtraDataList) noexcept;
     static ExtraDataList* GetExtraDataFromItem(const Inventory::Entry& arEntry) noexcept;
+    // Player-made potions are temporary forms, send their effects so that other clients can recreate them
+    static void GetCreatedAlchemyDataFromItem(Inventory::Entry& arEntry, TESForm* apItem) noexcept;
+    // Resolves the item of an entry, recreating it if it is a player-made potion
+    static TESBoundObject* GetObjectFromItem(const Inventory::Entry& arEntry) noexcept;
 
     virtual void sub_3B();
     virtual void sub_3C();
