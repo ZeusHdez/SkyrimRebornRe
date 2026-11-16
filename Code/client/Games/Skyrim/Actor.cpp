@@ -826,8 +826,9 @@ void Actor::Kill() noexcept
     if (pExtension->IsPlayer())
         return;
 
-    // TODO: these args are kind of bogus of course
-    KillImpl(nullptr, 100.f, true, true);
+    // Killing without an attacker seems to leave remote corpses that cannot be looted,
+    // so attribute the kill to the local player like a regular death would have one.
+    KillImpl(PlayerCharacter::Get(), 100.f, true, true);
 
     // Papyrus kill will not go through if it is queued by a kill move
     /*
