@@ -581,6 +581,11 @@ void TESObjectREFR::GetItemFromExtraData(Inventory::Entry& arEntry, ExtraDataLis
 
 void TESObjectREFR::GetCreatedAlchemyDataFromItem(Inventory::Entry& arEntry, TESForm* apItem) noexcept
 {
+    // Temporarily off while tracking down a crash: without effects nothing is recreated on other clients
+    constexpr bool kSyncCreatedAlchemyItems = false;
+    if (!kSyncCreatedAlchemyItems)
+        return;
+
     if (!apItem || !apItem->IsTemporary() || apItem->formType != FormType::Alchemy)
         return;
 
