@@ -566,15 +566,12 @@ void TESObjectREFR::GetItemFromExtraData(Inventory::Entry& arEntry, ExtraDataLis
         arEntry.ExtraSoulLevel = (int32_t)pExtraSoul->cSoul;
     }
 
-    /*
     if (ExtraTextDisplayData* pExtraTextDisplayData = Cast<ExtraTextDisplayData>(apExtraDataList->GetByType(ExtraDataType::TextDisplayData)))
     {
-        if (pExtraTextDisplayData->DisplayName)
-            arEntry.ExtraTextDisplayName = pExtraTextDisplayData->DisplayName;
-        else
-            arEntry.ExtraTextDisplayName = "";
+        // Other names are derived by the game itself, e.g. from tempering
+        if (pExtraTextDisplayData->iOwnerInstance == ExtraTextDisplayData::kCustomName && pExtraTextDisplayData->DisplayName.data)
+            arEntry.ExtraCustomName = pExtraTextDisplayData->DisplayName.AsAscii();
     }
-    */
 
     arEntry.ExtraWorn = apExtraDataList->Contains(ExtraDataType::Worn);
     arEntry.ExtraWornLeft = apExtraDataList->Contains(ExtraDataType::WornLeft);
@@ -607,6 +604,8 @@ void TESObjectREFR::GetCreatedAlchemyDataFromItem(Inventory::Entry& arEntry, TES
     }
 
     arEntry.IsPoison = pAlchemyItem->IsPoison();
+    if (pAlchemyItem->fullName.value.data)
+        arEntry.AlchemyName = pAlchemyItem->fullName.value.AsAscii();
 }
 
 TESBoundObject* TESObjectREFR::GetObjectFromItem(const Inventory::Entry& arEntry) noexcept
@@ -616,6 +615,14 @@ TESBoundObject* TESObjectREFR::GetObjectFromItem(const Inventory::Entry& arEntry
         AlchemyItem* pAlchemyItem = AlchemyItem::Create(arEntry.AlchemyEffects);
         if (pAlchemyItem && pAlchemyItem->IsPoison() != arEntry.IsPoison)
             spdlog::warn("Created alchemy item {:X} is poison: {}, but the sender has poison: {}", pAlchemyItem->formID, pAlchemyItem->IsPoison(), arEntry.IsPoison);
+
+        // All potions with these effects share this form on this client, so the last received name wins
+        if (pAlchemyItem && !arEntry.AlchemyName.empty())
+        {
+            const char* pCurrentName = pAlchemyItem->fullName.value.AsAscii();
+            if (!pCurrentName || arEntry.AlchemyName != pCurrentName)
+                pAlchemyItem->fullName.value.Set(arEntry.AlchemyName.c_str());
+        }
 
         return pAlchemyItem;
     }
@@ -691,20 +698,10 @@ ExtraDataList* TESObjectREFR::GetExtraDataFromItem(const Inventory::Entry& arEnt
         pExtraDataList->SetWorn(true);
     }
 
-    // TODO: this is causing crashes
-    /*
-    if (!arEntry.ExtraTextDisplayName.empty())
+    if (!arEntry.ExtraCustomName.empty())
     {
-        ExtraTextDisplayData* pExtraText = Memory::Allocate<ExtraTextDisplayData>();
-        *((uint64_t*)pExtraText) = 0x1416244D0;
-        pExtraText->next = nullptr;
-        pExtraText->DisplayName = arEntry.ExtraTextDisplayName.c_str();
-        pExtraText->usCustomNameLength = arEntry.ExtraTextDisplayName.length();
-        pExtraText->iOwnerInstance = -2;
-        pExtraText->fTemperFactor = 1.0F;
-        pExtraDataList->Add(ExtraDataType::TextDisplayData, pExtraText);
+        pExtraDataList->SetCustomName(arEntry.ExtraCustomName.c_str());
     }
-    */
 
     if (pExtraDataList->data == nullptr)
     {

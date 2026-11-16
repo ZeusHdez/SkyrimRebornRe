@@ -538,6 +538,7 @@ TEST_CASE("Packets", "[encoding.packets]")
         armor.BaseId.BaseId = 0x12E46;
         armor.Count = 1;
         armor.ExtraWorn = true;
+        armor.ExtraCustomName = "Dawnbreaker's Twin";
 
         Inventory::Entry gold;
         gold.BaseId.BaseId = 0xF;
@@ -554,6 +555,7 @@ TEST_CASE("Packets", "[encoding.packets]")
         createdPotion.BaseId.BaseId = 0x801;
         createdPotion.Count = 2;
         createdPotion.AlchemyEffects = {restoreHealth};
+        createdPotion.AlchemyName = "Potion of Restore Health";
 
         // The same potion has another temporary id on another client
         Inventory::Entry sameCreatedPotion = createdPotion;

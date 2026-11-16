@@ -19,6 +19,9 @@ struct ExtraTextDisplayData : BSExtraData
 {
     inline static constexpr auto eExtraData = ExtraDataType::TextDisplayData;
 
+    // Value of iOwnerInstance when the name was typed in by a player
+    inline static constexpr int32_t kCustomName = -2;
+
     BSFixedString DisplayName{};
     BGSMessage* pDisplayNameText{};
     TESQuest* pOwnerQuest{};

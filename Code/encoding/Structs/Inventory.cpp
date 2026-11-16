@@ -55,6 +55,9 @@ void Inventory::Entry::Serialize(TiltedPhoques::Buffer::Writer& aWriter) const n
         effect.Serialize(aWriter);
     }
     Serialization::WriteBool(aWriter, IsPoison);
+    Serialization::WriteString(aWriter, AlchemyName);
+
+    Serialization::WriteString(aWriter, ExtraCustomName);
 }
 
 void Inventory::Entry::Deserialize(TiltedPhoques::Buffer::Reader& aReader) noexcept
@@ -95,6 +98,9 @@ void Inventory::Entry::Deserialize(TiltedPhoques::Buffer::Reader& aReader) noexc
         AlchemyEffects.push_back(effect);
     }
     IsPoison = Serialization::ReadBool(aReader);
+    AlchemyName = Serialization::ReadString(aReader);
+
+    ExtraCustomName = Serialization::ReadString(aReader);
 }
 
 bool Inventory::operator==(const Inventory& acRhs) const noexcept

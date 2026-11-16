@@ -1,5 +1,8 @@
 #include "ExtraDataList.h"
 
+#include <Forms/TESQuest.h>
+#include <ExtraData/ExtraTextDisplayData.h>
+
 #include <Games/Overrides.h>
 
 ExtraDataList* ExtraDataList::New() noexcept
@@ -133,6 +136,27 @@ void ExtraDataList::SetEnchantmentData(EnchantmentItem* apItem, uint16_t aCharge
     TP_THIS_FUNCTION(TSetEnchantmentData, void, ExtraDataList, EnchantmentItem* apItem, uint16_t aCharge, bool aRemoveOnUnequip);
     POINTER_SKYRIMSE(TSetEnchantmentData, setEnchantmentData, 12060);
     TiltedPhoques::ThisCall(setEnchantmentData, this, apItem, aCharge, aRemoveOnUnequip);
+}
+
+void ExtraDataList::SetCustomName(const char* acpName) noexcept
+{
+    POINTER_SKYRIMSE(void*, s_vtbl, 186855);
+
+    // The game owns and frees the extra data, so it has to be built the way the game does
+    ExtraTextDisplayData* pExtraText = Memory::Allocate<ExtraTextDisplayData>();
+    memset(static_cast<void*>(pExtraText), 0, sizeof(ExtraTextDisplayData));
+    *reinterpret_cast<void**>(pExtraText) = s_vtbl.Get();
+
+    pExtraText->DisplayName.Set(acpName);
+    pExtraText->usCustomNameLength = static_cast<uint16_t>(strlen(acpName));
+    pExtraText->iOwnerInstance = ExtraTextDisplayData::kCustomName;
+    pExtraText->fTemperFactor = 1.f;
+
+    if (!Add(ExtraDataType::TextDisplayData, pExtraText))
+    {
+        pExtraText->DisplayName.Release();
+        Memory::Free(pExtraText);
+    }
 }
 
 bool ExtraDataList::HasQuestObjectAlias() noexcept
