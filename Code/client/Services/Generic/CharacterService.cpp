@@ -611,8 +611,22 @@ void CharacterService::OnCharacterSpawn(const CharacterSpawnRequest& acMessage) 
 
         if (!pActor)
         {
-            spdlog::error("Failed to retrieve Actor {:X}, it will not be spawned, possibly missing mod", cActorId);
-            spdlog::error("\tForm : {:X}", pForm ? pForm->formID : 0);
+            // Tell the three causes apart: the mod is not mapped, the reference is not loaded here (non-persistent
+            // references only exist while their cell is loaded), or the id resolves to something that is not an actor
+            if (cActorId == 0)
+                spdlog::error(
+                    "Failed to retrieve Actor for server id {:X}, it will not be spawned, mod of form {:X}:{:X} is not mapped locally, possibly missing mod", acMessage.ServerId,
+                    acMessage.FormId.BaseId, acMessage.FormId.ModId);
+            else if (!pForm)
+                spdlog::error(
+                    "Failed to retrieve Actor {:X} for server id {:X}, it will not be spawned, form {:X}:{:X} is not loaded locally (cell not loaded?), spawn position ({}, {}, "
+                    "{}), dead: {}",
+                    cActorId, acMessage.ServerId, acMessage.FormId.BaseId, acMessage.FormId.ModId, acMessage.Position.x, acMessage.Position.y, acMessage.Position.z,
+                    acMessage.IsDead);
+            else
+                spdlog::error(
+                    "Failed to retrieve Actor {:X} for server id {:X}, it will not be spawned, the form exists but is not an actor, form type: {}", cActorId, acMessage.ServerId,
+                    static_cast<uint32_t>(pForm->formType));
             return;
         }
 
