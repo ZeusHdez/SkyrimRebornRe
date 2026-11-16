@@ -21,6 +21,69 @@ std::string SerializeTimePoint(const time_point& time, const std::string& format
     return ss.str();
 }
 
+// Logs an address together with the module it belongs to, so that it can be looked up without a dump
+static void LogCodeAddress(const char* acpLabel, const uintptr_t aAddress, const MEMORY_BASIC_INFORMATION& acInfo)
+{
+    char modulePath[MAX_PATH] = "";
+    const uintptr_t cBase = reinterpret_cast<uintptr_t>(acInfo.AllocationBase);
+    if (!cBase || !GetModuleFileNameA(static_cast<HMODULE>(acInfo.AllocationBase), modulePath, sizeof(modulePath)))
+        StringCchCopyA(modulePath, sizeof(modulePath), "unknown module");
+
+    spdlog::error("\t{}: {:#x} ({} + {:#x})", acpLabel, aAddress, std::filesystem::path(modulePath).filename().string(), aAddress - cBase);
+}
+
+// The dump often does not make it to us, so write the faulting address and everything on the stack that
+// points into code to the log. A jump to a null function pointer leaves its caller at the top of that list.
+static void LogCrashContext(const PEXCEPTION_POINTERS apExceptionInfo)
+{
+    constexpr uint32_t kMaxScannedSlots = 1024;
+    constexpr uint32_t kMaxLoggedSlots = 48;
+    constexpr DWORD kExecutable = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+
+    const EXCEPTION_RECORD* pRecord = apExceptionInfo->ExceptionRecord;
+    const CONTEXT* pContext = apExceptionInfo->ContextRecord;
+
+    if (pRecord->NumberParameters >= 2)
+        spdlog::error("\taccess type {} on memory address {:#x}", pRecord->ExceptionInformation[0], pRecord->ExceptionInformation[1]);
+
+    spdlog::error("\tmain module is loaded at {:#x}", reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr)));
+
+    MEMORY_BASIC_INFORMATION info{};
+    if (VirtualQuery(reinterpret_cast<void*>(pContext->Rip), &info, sizeof(info)))
+        LogCodeAddress("crashed at", pContext->Rip, info);
+
+    // The handler runs on the thread that crashed
+    const NT_TIB* pThreadInfo = reinterpret_cast<const NT_TIB*>(NtCurrentTeb());
+    const uintptr_t stackLow = reinterpret_cast<uintptr_t>(pThreadInfo->StackLimit);
+    const uintptr_t stackHigh = reinterpret_cast<uintptr_t>(pThreadInfo->StackBase);
+    if (pContext->Rsp < stackLow || pContext->Rsp >= stackHigh)
+    {
+        spdlog::error("\tstack pointer {:#x} is outside of the thread stack, not reading it", pContext->Rsp);
+        return;
+    }
+
+    spdlog::error("\tcode addresses on the stack, the callers are among them:");
+
+    const uintptr_t* pStack = reinterpret_cast<const uintptr_t*>(pContext->Rsp & ~static_cast<uintptr_t>(7));
+    uint32_t logged = 0;
+    for (uint32_t i = 0; i < kMaxScannedSlots && logged < kMaxLoggedSlots; ++i)
+    {
+        if (reinterpret_cast<uintptr_t>(pStack + i + 1) > stackHigh)
+            break;
+
+        const uintptr_t cValue = pStack[i];
+        if (!VirtualQuery(reinterpret_cast<void*>(cValue), &info, sizeof(info)))
+            continue;
+        if (info.State != MEM_COMMIT || !(info.Protect & kExecutable))
+            continue;
+
+        char label[32];
+        StringCchPrintfA(label, sizeof(label), "rsp+%#x", i * 8);
+        LogCodeAddress(label, cValue, info);
+        ++logged;
+    }
+}
+
 LONG WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo)
 {
     static int alreadyCrashed = 0;
@@ -41,6 +104,8 @@ LONG WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo)
                       pExceptionInfo->ExceptionRecord->ExceptionAddress,
                       pExceptionInfo->ExceptionRecord->ExceptionFlags);
 
+        LogCrashContext(pExceptionInfo);
+
 #if (IS_MASTER)
         volatile static bool bMiniDump = false;
 #else
@@ -48,7 +113,9 @@ LONG WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo)
 #endif
         if (bMiniDump)
         {
-            HANDLE hDumpFile = NULL;
+            HANDLE hDumpFile = INVALID_HANDLE_VALUE;
+            std::string dumpFilePath;
+            BOOL dumpWritten = FALSE;
             try
             {
                 MINIDUMP_EXCEPTION_INFORMATION M;
@@ -69,6 +136,7 @@ LONG WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo)
                 CrashHandler::RemovePreviousDump(subPath);
 
                 subPath /= oss.str();
+                dumpFilePath = subPath.string();
 
                 hDumpFile = CreateFileA(subPath.string().c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
                                         FILE_ATTRIBUTE_NORMAL, NULL);
@@ -85,20 +153,21 @@ LONG WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo)
                                     */
                                     0;
 
-                MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hDumpFile, (MINIDUMP_TYPE)dumpSettings,
+                dumpWritten = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hDumpFile, (MINIDUMP_TYPE)dumpSettings,
                                   (pExceptionInfo) ? &M : NULL, NULL, NULL);
             }
             catch (...) // Mini-dump is best effort only.
             {
             }
 
-            if (!hDumpFile)
-                spdlog::critical(__FUNCTION__ ": coredump may have failed.");
-            else
-            {
+            // CreateFile reports failure with INVALID_HANDLE_VALUE, not with a null handle
+            if (hDumpFile != INVALID_HANDLE_VALUE)
                 CloseHandle(hDumpFile);
-                spdlog::critical(__FUNCTION__ ": coredump created -> flush logs.");
-            }
+
+            if (hDumpFile == INVALID_HANDLE_VALUE || !dumpWritten)
+                spdlog::critical(__FUNCTION__ ": coredump failed, could not write {}", dumpFilePath);
+            else
+                spdlog::critical(__FUNCTION__ ": coredump created at {} -> flush logs.", dumpFilePath);
         }
 
         // Something in STR breaks top-level unhandled exception filters.
