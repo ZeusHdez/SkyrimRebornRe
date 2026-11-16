@@ -612,9 +612,17 @@ TESBoundObject* TESObjectREFR::GetObjectFromItem(const Inventory::Entry& arEntry
 {
     if (arEntry.IsCreatedAlchemyItem())
     {
+        // The game function used to create potions always makes a drinkable potion, even from poison effects.
+        // Leave player-made poisons out until they can be created as poisons.
+        if (arEntry.IsPoison)
+        {
+            spdlog::warn("Player-made poison {:X} cannot be recreated yet, skipping it", arEntry.BaseId.BaseId);
+            return nullptr;
+        }
+
         AlchemyItem* pAlchemyItem = AlchemyItem::Create(arEntry.AlchemyEffects);
-        if (pAlchemyItem && pAlchemyItem->IsPoison() != arEntry.IsPoison)
-            spdlog::warn("Created alchemy item {:X} is poison: {}, but the sender has poison: {}", pAlchemyItem->formID, pAlchemyItem->IsPoison(), arEntry.IsPoison);
+        if (pAlchemyItem && pAlchemyItem->IsPoison())
+            spdlog::warn("Created alchemy item {:X} unexpectedly is a poison", pAlchemyItem->formID);
 
         // All potions with these effects share this form on this client, so the last received name wins
         if (pAlchemyItem && !arEntry.AlchemyName.empty())
