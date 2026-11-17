@@ -144,6 +144,9 @@ LONG WINAPI VectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo)
                 // baseline settings from https://stackoverflow.com/a/63123214/5273909
                 auto dumpSettings = MiniDumpWithDataSegs | MiniDumpWithProcessThreadData | MiniDumpWithHandleData |
                                     MiniDumpWithThreadInfo |
+                                    // Pulls in the heap objects that registers and stack slots point to (the reference
+                                    // and cell a crash was working on), without writing the whole heap
+                                    MiniDumpWithIndirectlyReferencedMemory |
                                     /*
                                     //MiniDumpWithPrivateReadWriteMemory | // this one gens bad dump
                                     MiniDumpWithUnloadedModules |
