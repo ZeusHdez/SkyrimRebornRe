@@ -90,7 +90,8 @@ struct CharacterService
     void ProcessNewEntity(entt::entity aEntity) const noexcept;
 
 private:
-    void MoveActor(const Actor* apActor, const GameId& acWorldSpaceId, const GameId& acCellId, const Vector3_NetQuantize& acPosition) const noexcept;
+    // Returns false when the actor was not moved
+    bool MoveActor(const Actor* apActor, const GameId& acWorldSpaceId, const GameId& acCellId, const Vector3_NetQuantize& acPosition) const noexcept;
 
     void RequestServerAssignment(entt::entity aEntity) const noexcept;
     void CancelServerAssignment(entt::entity aEntity, uint32_t aFormId) const noexcept;

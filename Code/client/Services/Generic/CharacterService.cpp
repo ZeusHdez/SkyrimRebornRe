@@ -1333,7 +1333,8 @@ void CharacterService::OnNotifyActorTeleport(const NotifyActorTeleport& acMessag
         return;
     }
 
-    MoveActor(pActor, acMessage.WorldSpaceId, acMessage.CellId, acMessage.Position);
+    if (!MoveActor(pActor, acMessage.WorldSpaceId, acMessage.CellId, acMessage.Position))
+        return;
 
     spdlog::info("Successfully teleported actor, form id: {:X}, world space: {:X}, cell: {:X}, position: ({}, {}, {})", pActor->formID, acMessage.WorldSpaceId.BaseId, acMessage.CellId.BaseId, acMessage.Position.x, acMessage.Position.y, acMessage.Position.z);
 }
@@ -1351,13 +1352,22 @@ void CharacterService::OnPartyJoinedEvent(const PartyJoinedEvent& acEvent) noexc
     }
 }
 
-void CharacterService::MoveActor(const Actor* apActor, const GameId& acWorldSpaceId, const GameId& acCellId, const Vector3_NetQuantize& acPosition) const noexcept
+bool CharacterService::MoveActor(const Actor* apActor, const GameId& acWorldSpaceId, const GameId& acCellId, const Vector3_NetQuantize& acPosition) const noexcept
 {
+    // Moving an actor between cells that are not loaded here changes nothing visible, but it leaves references
+    // in cells the engine later frees, which crashed the save/load code. Only move actors this client can see,
+    // or that are about to enter what it has loaded.
+    const TESObjectCELL* pCurrentCell = apActor->parentCell;
+    const bool cIsLoadedHere = pCurrentCell && pCurrentCell->IsAttached();
+
     TESObjectCELL* pCell = nullptr;
     if (!acWorldSpaceId)
     {
         const uint32_t cCellId = m_world.GetModSystem().GetGameId(acCellId);
         pCell = Cast<TESObjectCELL>(TESForm::GetById(cCellId));
+
+        if (pCell && !pCell->IsAttached() && !cIsLoadedHere)
+            return false;
     }
     // In case of lazy-loading of exterior cells
     else
@@ -1366,7 +1376,18 @@ void CharacterService::MoveActor(const Actor* apActor, const GameId& acWorldSpac
         TESWorldSpace* const pWorldSpace = Cast<TESWorldSpace>(TESForm::GetById(cWorldSpaceId));
         if (pWorldSpace)
         {
-            GridCellCoords coordinates = GridCellCoords::CalculateGridCellCoords(acPosition);
+            const GridCellCoords coordinates = GridCellCoords::CalculateGridCellCoords(acPosition);
+
+            if (!cIsLoadedHere)
+            {
+                const PlayerCharacter* pPlayer = PlayerCharacter::Get();
+                const TES* pTES = TES::Get();
+                const bool cIsInLoadedGrid = pPlayer && pTES && pPlayer->GetWorldSpace() == pWorldSpace &&
+                                             GridCellCoords::IsCellInGridCell(coordinates, GridCellCoords(pTES->centerGridX, pTES->centerGridY), false);
+                if (!cIsInLoadedGrid)
+                    return false;
+            }
+
             pCell = pWorldSpace->LoadCell(coordinates.X, coordinates.Y);
         }
     }
@@ -1374,10 +1395,11 @@ void CharacterService::MoveActor(const Actor* apActor, const GameId& acWorldSpac
     if (!pCell)
     {
         spdlog::error(__FUNCTION__ ": failed to fetch cell to teleport, actor: {:X}, worldspace: {:X}, cell: {:X}, position: {}, {}, {}", apActor->formID, acWorldSpaceId.BaseId, acCellId.BaseId, acPosition.x, acPosition.y, acPosition.z);
-        return;
+        return false;
     }
 
     apActor->MoveTo(pCell, acPosition);
+    return true;
 }
 
 void CharacterService::ProcessNewEntity(entt::entity aEntity) const noexcept
